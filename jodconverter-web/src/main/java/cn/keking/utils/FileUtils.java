@@ -1,14 +1,13 @@
 package cn.keking.utils;
 
+import cn.keking.config.ConfigConstants;
 import cn.keking.model.FileAttribute;
 import cn.keking.model.FileType;
+import cn.keking.service.cache.CacheService;
 import com.google.common.collect.Lists;
-import org.redisson.api.RMapCache;
-import org.redisson.api.RedissonClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
@@ -27,29 +26,17 @@ import java.util.Map;
 public class FileUtils {
     Logger log= LoggerFactory.getLogger(getClass());
 
-
-    final String REDIS_FILE_PREVIEW_PDF_KEY = "converted-preview-pdf-file";
-    final String REDIS_FILE_PREVIEW_IMGS_KEY = "converted-preview-imgs-file";//压缩包内图片文件集合
     @Autowired
-    RedissonClient redissonClient;
-    @Value("${file.dir}")
-    String fileDir;
+    CacheService cacheService;
 
-    @Value("${converted.file.charset}")
-    String charset;
+    String fileDir = ConfigConstants.getFileDir();
 
-    @Value("${simText}")
-    String[] simText;
-
-    @Value("${media}")
-    String[] media;
     /**
      * 已转换过的文件集合(redis缓存)
      * @return
      */
     public Map<String, String> listConvertedFiles() {
-        RMapCache<String, String> convertedList = redissonClient.getMapCache(REDIS_FILE_PREVIEW_PDF_KEY);
-        return convertedList;
+        return cacheService.getPDFCache();
     }
 
     /**
@@ -57,8 +44,16 @@ public class FileUtils {
      * @return
      */
     public String getConvertedFile(String key) {
-        RMapCache<String, String> convertedList = redissonClient.getMapCache(REDIS_FILE_PREVIEW_PDF_KEY);
-        return convertedList.get(key);
+        return cacheService.getPDFCache(key);
+    }
+
+    /**
+     * 已将pdf转换成图片的图片本地路径
+     * @param key pdf本地路径
+     * @return
+     */
+    public Integer getConvertedPdfImage(String key) {
+        return cacheService.getPdfImageCache(key);
     }
 
     /**
@@ -68,6 +63,8 @@ public class FileUtils {
      * @return
      */
     public FileType typeFromUrl(String url) {
+        String[] simText = ConfigConstants.getSimText();
+        String[] media = ConfigConstants.getMedia();
         String nonPramStr = url.substring(0, url.indexOf("?") != -1 ? url.indexOf("?") : url.length());
         String fileName = nonPramStr.substring(nonPramStr.lastIndexOf("/") + 1);
         String fileType = fileName.substring(fileName.lastIndexOf(".") + 1);
@@ -170,8 +167,16 @@ public class FileUtils {
     }
 
     public void addConvertedFile(String fileName, String value){
-        RMapCache<String, String> convertedList = redissonClient.getMapCache(REDIS_FILE_PREVIEW_PDF_KEY);
-        convertedList.fastPut(fileName, value);
+        cacheService.putPDFCache(fileName, value);
+    }
+
+    /**
+     *
+     * @param pdfFilePath
+     * @param num
+     */
+    public void addConvertedPdfImage(String pdfFilePath, int num){
+        cacheService.putPdfImageCache(pdfFilePath, num);
     }
 
     /**
@@ -180,8 +185,7 @@ public class FileUtils {
      * @return
      */
     public List getRedisImgUrls(String fileKey){
-        RMapCache<String, List> convertedList = redissonClient.getMapCache(REDIS_FILE_PREVIEW_IMGS_KEY);
-        return convertedList.get(fileKey);
+        return cacheService.getImgCache(fileKey);
     }
 
     /**
@@ -190,8 +194,7 @@ public class FileUtils {
      * @param imgs
      */
     public void setRedisImgUrls(String fileKey,List imgs){
-        RMapCache<String, List> convertedList = redissonClient.getMapCache(REDIS_FILE_PREVIEW_IMGS_KEY);
-         convertedList.fastPut(fileKey,imgs);
+        cacheService.putImgCache(fileKey, imgs);
     }
     /**
      * 判断文件编码格式
@@ -225,6 +228,7 @@ public class FileUtils {
      */
     public void doActionConvertedFile(String outFilePath) {
         StringBuffer sb = new StringBuffer();
+        String charset = ConfigConstants.getConvertedFileCharset();
         try (InputStream inputStream = new FileInputStream(outFilePath);
             BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, charset))){
             String line;
@@ -245,7 +249,7 @@ public class FileUtils {
         }
         // 重新写入文件
         try(FileOutputStream fos = new FileOutputStream(outFilePath);
-            BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(fos))){
+            BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(fos, "utf-8"))) {
             writer.write(sb.toString());
         } catch (FileNotFoundException e) {
             e.printStackTrace();

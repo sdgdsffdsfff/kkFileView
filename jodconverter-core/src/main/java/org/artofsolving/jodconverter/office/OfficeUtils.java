@@ -12,8 +12,11 @@
 //
 package org.artofsolving.jodconverter.office;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileReader;
 import java.util.Map;
+import java.util.Properties;
 
 import org.artofsolving.jodconverter.util.PlatformUtils;
 
@@ -61,29 +64,40 @@ public class OfficeUtils {
     }
 
     public static File getDefaultOfficeHome() {
-        if (System.getProperty("office.home") != null) {
-            return new File(System.getProperty("office.home"));
+        Properties properties = new Properties();
+        String customizedConfigPath = getCustomizedConfigPath();
+        try {
+            BufferedReader bufferedReader = new BufferedReader(new FileReader(customizedConfigPath));
+            properties.load(bufferedReader);
+        } catch (Exception e) {}
+        if (properties.getProperty("office.home") != null) {
+            return new File(properties.getProperty("office.home"));
         }
         if (PlatformUtils.isWindows()) {
             // %ProgramFiles(x86)% on 64-bit machines; %ProgramFiles% on 32-bit ones
+            String homePath = OfficeUtils.getHomePath();
             String programFiles = System.getenv("ProgramFiles(x86)");
             if (programFiles == null) {
                 programFiles = System.getenv("ProgramFiles");
             }
             return findOfficeHome(
                 programFiles + File.separator + "OpenOffice 4",
-                programFiles + File.separator + "LibreOffice 4"
+                programFiles + File.separator + "LibreOffice 4",
+                homePath + File.separator + "office"
             );
         } else if (PlatformUtils.isMac()) {
             return findOfficeHome(
                 "/Applications/OpenOffice.org.app/Contents",
+                "/Applications/OpenOffice.app/Contents",
                 "/Applications/LibreOffice.app/Contents"
             );
         } else {
             // Linux or other *nix variants
             return findOfficeHome(
                 "/opt/openoffice.org3",
+                "/opt/openoffice",
                 "/opt/libreoffice",
+                "/opt/openoffice4",
                 "/usr/lib/openoffice",
                 "/usr/lib/libreoffice"
             );
@@ -106,6 +120,31 @@ public class OfficeUtils {
         } else {
             return new File(officeHome, "program/soffice.bin");
         }
+    }
+
+    public static String getHomePath() {
+        String userDir = System.getenv("KKFILEVIEW_BIN_FOLDER");
+        if (userDir == null) {
+            userDir = System.getProperty("user.dir");
+        }
+        if (userDir.endsWith("bin")) {
+            userDir = userDir.substring(0, userDir.length() - 4);
+        } else {
+            String separator = File.separator;
+            if (userDir.contains("jodconverter-web")) {
+                userDir = userDir + separator + "src" + separator +  "main";
+            } else {
+                userDir = userDir + separator + "jodconverter-web" + separator + "src" + separator + "main";
+            }
+        }
+        return userDir;
+    }
+
+    public static String getCustomizedConfigPath() {
+        String homePath = OfficeUtils.getHomePath();
+        String separator = java.io.File.separator;
+        String configFilePath = homePath + separator + "conf" + separator + "application.properties";
+        return configFilePath;
     }
 
 }

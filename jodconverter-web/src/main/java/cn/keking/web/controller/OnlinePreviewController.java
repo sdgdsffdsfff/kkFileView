@@ -1,12 +1,10 @@
 package cn.keking.web.controller;
 
-import cn.keking.service.FileConverQueueTask;
 import cn.keking.service.FilePreview;
 import cn.keking.service.FilePreviewFactory;
 
+import cn.keking.service.cache.CacheService;
 import org.apache.commons.io.IOUtils;
-import org.redisson.api.RBlockingQueue;
-import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -17,16 +15,10 @@ import org.springframework.web.bind.annotation.ResponseBody;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.UnsupportedEncodingException;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLConnection;
-import java.net.URLDecoder;
+import java.io.*;
+import java.net.*;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 
 /**
  * @author yudian-it
@@ -38,7 +30,7 @@ public class OnlinePreviewController {
     FilePreviewFactory previewFactory;
 
     @Autowired
-    RedissonClient redissonClient;
+    CacheService cacheService;
 
     /**
      * @param url
@@ -48,6 +40,8 @@ public class OnlinePreviewController {
     @RequestMapping(value = "onlinePreview", method = RequestMethod.GET)
     public String onlinePreview(String url, Model model, HttpServletRequest req) {
         req.setAttribute("fileKey", req.getParameter("fileKey"));
+        model.addAttribute("officePreviewType", req.getParameter("officePreviewType"));
+        model.addAttribute("originUrl",req.getRequestURL().toString());
         FilePreview filePreview = previewFactory.get(url);
         return filePreview.filePreviewHandle(url, model);
     }
@@ -99,7 +93,7 @@ public class OnlinePreviewController {
         InputStream inputStream = null;
         try {
             String strUrl = urlPath.trim();
-            URL url = new URL(strUrl);
+            URL url = new URL(new URI(strUrl).toASCIIString());
             //打开请求连接
             URLConnection connection = url.openConnection();
             HttpURLConnection httpURLConnection = (HttpURLConnection) connection;
@@ -110,7 +104,7 @@ public class OnlinePreviewController {
             while (-1 != (len = inputStream.read(bs))) {
                 resp.getOutputStream().write(bs, 0, len);
             }
-        } catch (IOException e) {
+        } catch (IOException | URISyntaxException e) {
             e.printStackTrace();
         } finally {
             if (inputStream != null) {
@@ -126,8 +120,7 @@ public class OnlinePreviewController {
     @GetMapping("/addTask")
     @ResponseBody
     public String addQueueTask(String url) {
-        final RBlockingQueue<String> queue = redissonClient.getBlockingQueue(FileConverQueueTask.queueTaskName);
-        queue.addAsync(url);
+        cacheService.addQueueTask(url);
         return "success";
     }
 

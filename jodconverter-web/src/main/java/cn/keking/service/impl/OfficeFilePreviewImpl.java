@@ -1,11 +1,13 @@
 package cn.keking.service.impl;
 
+import cn.keking.config.ConfigConstants;
 import cn.keking.model.FileAttribute;
 import cn.keking.model.ReturnResponse;
 import cn.keking.service.FilePreview;
 import cn.keking.utils.DownloadUtils;
 import cn.keking.utils.FileUtils;
 import cn.keking.utils.OfficeToPdf;
+import cn.keking.utils.PdfUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -14,6 +16,7 @@ import org.springframework.ui.Model;
 import org.springframework.util.StringUtils;
 
 import java.io.File;
+import java.util.List;
 
 /**
  * Created by kl on 2018/1/17.
@@ -25,8 +28,8 @@ public class OfficeFilePreviewImpl implements FilePreview {
     @Autowired
     FileUtils fileUtils;
 
-    @Value("${file.dir}")
-    String fileDir;
+    @Autowired
+    PdfUtils pdfUtils;
 
     @Autowired
     DownloadUtils downloadUtils;
@@ -34,26 +37,36 @@ public class OfficeFilePreviewImpl implements FilePreview {
     @Autowired
     private OfficeToPdf officeToPdf;
 
+    String fileDir = ConfigConstants.getFileDir();
+
+    public static final String OFFICE_PREVIEW_TYPE_PDF = "pdf";
+    public static final String OFFICE_PREVIEW_TYPE_IMAGE = "image";
+    public static final String OFFICE_PREVIEW_TYPE_ALLIMAGES = "allImages";
+
     @Override
     public String filePreviewHandle(String url, Model model) {
+        // 预览Type，参数传了就取参数的，没传取系统默认
+        String officePreviewType = model.asMap().get("officePreviewType") == null ? ConfigConstants.getOfficePreviewType() : model.asMap().get("officePreviewType").toString();
+        String originUrl = model.asMap().get("originUrl").toString();
         FileAttribute fileAttribute=fileUtils.getFileAttribute(url);
         String suffix=fileAttribute.getSuffix();
         String fileName=fileAttribute.getName();
         String decodedUrl=fileAttribute.getDecodedUrl();
         boolean isHtml = suffix.equalsIgnoreCase("xls") || suffix.equalsIgnoreCase("xlsx");
         String pdfName = fileName.substring(0, fileName.lastIndexOf(".") + 1) + (isHtml ? "html" : "pdf");
+        String outFilePath = fileDir + pdfName;
         // 判断之前是否已转换过，如果转换过，直接返回，否则执行转换
         if (!fileUtils.listConvertedFiles().containsKey(pdfName)) {
             String filePath = fileDir + fileName;
             if (!new File(filePath).exists()) {
                 ReturnResponse<String> response = downloadUtils.downLoad(decodedUrl, suffix, null);
                 if (0 != response.getCode()) {
+                    model.addAttribute("fileType", suffix);
                     model.addAttribute("msg", response.getMsg());
                     return "fileNotSupported";
                 }
                 filePath = response.getContent();
             }
-            String outFilePath = fileDir + pdfName;
             if (StringUtils.hasText(outFilePath)) {
                 officeToPdf.openOfficeToPDF(filePath, outFilePath);
                 File f = new File(filePath);
@@ -66,6 +79,21 @@ public class OfficeFilePreviewImpl implements FilePreview {
                 }
                 // 加入缓存
                 fileUtils.addConvertedFile(pdfName, fileUtils.getRelativePath(outFilePath));
+            }
+        }
+        if (!isHtml && (OFFICE_PREVIEW_TYPE_IMAGE.equals(officePreviewType) || OFFICE_PREVIEW_TYPE_ALLIMAGES.equals(officePreviewType))) {
+            List<String> imageUrls = pdfUtils.pdf2jpg(outFilePath, pdfName, originUrl);
+            if (imageUrls == null || imageUrls.size() < 1) {
+                model.addAttribute("msg", "office转图片异常，请联系管理员");
+                model.addAttribute("fileType",fileAttribute.getSuffix());
+                return "fileNotSupported";
+            }
+            model.addAttribute("imgurls", imageUrls);
+            model.addAttribute("currentUrl", imageUrls.get(0));
+            if (OFFICE_PREVIEW_TYPE_IMAGE.equals(officePreviewType)) {
+                return "officePicture";
+            } else {
+                return "picture";
             }
         }
         model.addAttribute("pdfUrl", pdfName);
